@@ -10,10 +10,14 @@ API_SECRET = "H9XWSheVPuSq1lwa"
 # Endpoints de Amadeus
 AUTH_URL = "https://test.api.amadeus.com/v1/security/oauth2/token"
 FLIGHT_SEARCH_URL = "https://test.api.amadeus.com/v2/shopping/flight-offers"
+AIRPORT_SEARCH_URL = "https://test.api.amadeus.com/v1/reference-data/locations"
 
 # Variable para cachear el token de acceso
 _access_token = None
 _token_expiry = None
+
+# Caché para búsquedas de aeropuertos
+_airport_cache = {}
 
 
 def obtener_access_token():
@@ -21,7 +25,7 @@ def obtener_access_token():
     global _access_token, _token_expiry
 
     # Verificar si el token en caché aún es válido
-    if _access_token and _token_expiry and datetime.now() < _token_expiry:
+    if _access_token and _token_expiry and datetime.now().timestamp() < _token_expiry:
         return _access_token
 
     # Crear la cadena de autenticación básica
@@ -50,6 +54,67 @@ def obtener_access_token():
     except requests.RequestException as e:
         print(f"Error al obtener token de acceso: {e}")
         return None
+
+
+def buscar_aeropuertos_amadeus(keyword):
+    """
+    Busca aeropuertos y ciudades en Amadeus API
+    Retorna lista de aeropuertos que Amadeus soporta
+    """
+    global _airport_cache
+    
+    # Usar caché si existe
+    keyword_upper = keyword.upper()
+    if keyword_upper in _airport_cache:
+        return _airport_cache[keyword_upper]
+    
+    # Mínimo 2 caracteres para buscar
+    if len(keyword) < 2:
+        return []
+    
+    token = obtener_access_token()
+    if not token:
+        return []
+    
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
+    
+    params = {
+        "subType": "AIRPORT,CITY",
+        "keyword": keyword,
+        "page[limit]": 20
+    }
+    
+    try:
+        response = requests.get(AIRPORT_SEARCH_URL, headers=headers, params=params)
+        response.raise_for_status()
+        data = response.json()
+        
+        resultados = []
+        for location in data.get("data", []):
+            iata_code = location.get("iataCode")
+            name = location.get("name")
+            city = location.get("address", {}).get("cityName", "")
+            country = location.get("address", {}).get("countryName", "")
+            
+            if iata_code and name:
+                # Formato: "MAD - Madrid, Spain (Aeropuerto)"
+                label = f"{iata_code} - {name}"
+                if city and city not in name:
+                    label += f", {city}"
+                if country:
+                    label += f" ({country})"
+                
+                resultados.append(label)
+        
+        # Cachear resultado
+        _airport_cache[keyword_upper] = resultados
+        return resultados
+        
+    except requests.RequestException as e:
+        print(f"Error al buscar aeropuertos: {e}")
+        return []
 
 
 def buscar_vuelos_amadeus(origen, destino, fecha_salida, fecha_regreso, adultos=1):
