@@ -3,7 +3,33 @@ from tkinter import Text, messagebox, ttk
 from tkcalendar import DateEntry
 from api_handler import buscar_vuelos, buscar_aeropuertos_amadeus
 import threading
+from datetime import datetime
 
+
+def filtrar_aeropuertos(event, combobox):
+    """Filtra aeropuertos usando la API de Amadeus en tiempo real"""
+    valor = event.widget.get().strip()
+    
+    # Si está vacío, limpiar resultados
+    if valor == '':
+        combobox['values'] = []
+        return
+    
+    # Buscar en Amadeus API con el texto introducido
+    resultados = buscar_aeropuertos_amadeus(valor)
+    
+    combobox['values'] = resultados
+    
+    # Si hay solo un resultado, no mostrar dropdown (esperar más input)
+    if len(resultados) > 1:
+        combobox.event_generate('<Down>')
+
+
+def extraer_codigo_iata(seleccion):
+    """Extrae el código IATA de la selección (ej: 'MAD - Madrid' -> 'MAD')"""
+    if seleccion:
+        return seleccion.split(' - ')[0].strip()
+    return ""
 
 def mostrar_resultados():
     # Extraer códigos IATA de las selecciones
@@ -87,20 +113,26 @@ def iniciar_interfaz():
     inputs_frame.pack(fill=tk.X, padx=15, pady=10)
 
     # Origen
-    tk.Label(inputs_frame, text="Origen (código IATA):", font=("Arial", 10), bg="#ffffff").grid(row=0, column=0,
-                                                                                                sticky="w", pady=5)
-    origen_entry = tk.Entry(inputs_frame, font=("Arial", 10), width=15)
-    origen_entry.grid(row=0, column=1, padx=5, sticky="w")
-    tk.Label(inputs_frame, text="Ej: MAD, BCN, SVQ", font=("Arial", 8, "italic"), fg="gray", bg="#ffffff").grid(row=0,
+    tk.Label(inputs_frame, text="Origen:", font=("Arial", 10), bg="#ffffff").grid(row=0, column=0,
+                                                                                  sticky="w", pady=5)
+    origen_combo = ttk.Combobox(inputs_frame, values=[], font=("Arial", 10), width=30)
+    origen_combo.grid(row=0, column=1, padx=5, sticky="w")
+    origen_combo.set("")  # Iniciar vacío
+    origen_combo.bind('<KeyRelease>', lambda event: filtrar_aeropuertos(event, origen_combo))
+    tk.Label(inputs_frame, text="Escribe para buscar aeropuertos", font=("Arial", 8, "italic"), fg="gray", bg="#ffffff").grid(row=0,
+
                                                                                                                 column=2,
                                                                                                                 sticky="w")
 
     # Destino
-    tk.Label(inputs_frame, text="Destino (código IATA):", font=("Arial", 10), bg="#ffffff").grid(row=1, column=0,
-                                                                                                 sticky="w", pady=5)
-    destino_entry = tk.Entry(inputs_frame, font=("Arial", 10), width=15)
-    destino_entry.grid(row=1, column=1, padx=5, sticky="w")
-    tk.Label(inputs_frame, text="Ej: MAD, BCN, SVQ", font=("Arial", 8, "italic"), fg="gray", bg="#ffffff").grid(row=1,
+    tk.Label(inputs_frame, text="Destino:", font=("Arial", 10), bg="#ffffff").grid(row=1, column=0,
+                                                                                   sticky="w", pady=5)
+    destino_combo = ttk.Combobox(inputs_frame, values=[], font=("Arial", 10), width=30)
+    destino_combo.grid(row=1, column=1, padx=5, sticky="w")
+    destino_combo.set("")  # Iniciar vacío
+    destino_combo.bind('<KeyRelease>', lambda event: filtrar_aeropuertos(event, destino_combo))
+    tk.Label(inputs_frame, text="Escribe para buscar aeropuertos", font=("Arial", 8, "italic"), fg="gray", bg="#ffffff").grid(row=1,
+
                                                                                                                 column=2,
                                                                                                                 sticky="w")
 
@@ -159,7 +191,7 @@ def iniciar_interfaz():
     scrollbar.config(command=resultados_text.yview)
 
     # Footer
-    footer = tk.Label(root, text="Asegúrate de haber configurado tu API Key de Skyscanner en api_handler.py",
+    footer = tk.Label(root, text="Amadeus API (Test) | Escribe en origen/destino para filtrar | Selecciona fechas en calendario",
                       font=("Arial", 8, "italic"), fg="gray", bg="#f0f0f0")
     footer.pack(pady=5)
 
