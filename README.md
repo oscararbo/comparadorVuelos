@@ -10,15 +10,22 @@ Con esta aplicación intuitiva, los usuarios pueden ingresar su origen, destino 
 - **Ventana optimizada** (950x750 píxeles) con área de resultados ampliada
 - **Paneles plegables** - Los filtros y herramientas se pueden ocultar para maximizar el espacio de resultados
 - **Resultados legibles** - Fuente Arial 9 para mejor visualización
+- **Soporte multi-moneda** - Elige entre EUR, USD o GBP para ver precios en tu moneda preferida
 - Soporte para viajes de ida y vuelta con múltiples adultos (1-9)  
+- **Validación inteligente de fechas** - La fecha de regreso no puede ser anterior a la fecha de salida
 - **Búsqueda dinámica de aeropuertos** - Escribe al menos 3 letras y obtén sugerencias en tiempo real desde la API de Amadeus  
 - **Solo aeropuertos disponibles** - Solo muestra aeropuertos donde puedes comprar vuelos a través de Amadeus  
 - **Sistema de filtros avanzado**  
    - Filtrar por precio máximo (50-5000 EUR)  
    - Filtrar por duración máxima (1-48 horas)  
    - Filtrar por número de escalas (0-5)  
+   - **Filtrar por horario de salida** (rango de horas: HH:MM a HH:MM)
    - Aplicar múltiples filtros simultáneamente  
    - Ver resultados filtrados en tiempo real sin nuevas llamadas a la API
+- **Visualización de gráficos avanzada con matplotlib**
+   - **Tendencia de Precios**: Gráfico de línea mostrando precios con indicadores de mínimo/máximo y promedio
+   - **Comparación de Aerolíneas**: Gráfico de barras horizontales comparando precios promedio por aerolínea
+   - **Distribución de Precios**: Histograma con estadísticas completas (promedio, precio central, rango)
 - **Herramientas de ordenamiento** - Ordena vuelos por precio, duración o número de escalas
 - **Estadísticas automáticas** - Precio min/max/promedio y duración por búsqueda
 - Selectores de fecha con calendario integrado (sin fechas pasadas)  
@@ -29,6 +36,7 @@ Con esta aplicación intuitiva, los usuarios pueden ingresar su origen, destino 
    - Número de adultos y timestamp
 - **Arquitectura MVC** - Lógica de negocio separada en `flight_controller.py` para mejor mantenimiento
 - **Búsquedas consecutivas sin reiniciar** - Sistema de reseteo automático de filtros
+- **Manejo robusto de errores** - Mensajes claros y específicos para diferentes tipos de errores (conexión, timeout, parámetros inválidos)
 - Prevención de búsquedas concurrentes con indicador de progreso
 - Búsqueda asincrónica sin bloqueos en la interfaz  
 - Autenticación OAuth2 con cacheo automático de tokens  
@@ -37,6 +45,7 @@ Con esta aplicación intuitiva, los usuarios pueden ingresar su origen, destino 
 ## Requisitos Previos
 - Python 3.7+
 - Una API Key y API Secret de Amadeus (obtén los en: https://developers.amadeus.com/)
+- Librerías requeridas: requests, tkcalendar, matplotlib
 
 ## Obtener Credenciales de Amadeus
 1. Visita https://developers.amadeus.com/
@@ -104,18 +113,26 @@ Ejecuta el script principal:
 3. **Selecciona la fecha de salida**: Haz clic en el calendario para elegir la fecha
    - No puedes seleccionar fechas pasadas
 4. **Opcionalmente, marca "Incluir vuelta"** y selecciona la fecha de regreso
+   - La fecha de regreso no puede ser anterior a la fecha de salida
+   - Si cambias la fecha de salida, la fecha de regreso se ajustará automáticamente si es necesario
 5. **Selecciona el número de adultos** (1-9) - El precio total se calculará automáticamente
-6. Haz clic en **"Buscar Vuelos"**
-7. **Usa los filtros** para refinar los resultados:
+6. **Selecciona la moneda** (EUR, USD o GBP) para ver los precios en tu moneda preferida
+7. Haz clic en **"Buscar Vuelos"**
+8. **Usa los filtros** para refinar los resultados:
    - **Precio máximo**: Solo muestra vuelos dentro de tu presupuesto
    - **Duración máxima**: Filtra por tiempo total de viaje
    - **Escalas máximas**: Elige entre vuelos directos (0) o con escalas (1-5)
+   - **Horario de salida**: Define un rango horario (ej: 08:00 a 20:00) para filtrar por hora de salida
    - Activa/desactiva cada filtro según tus necesidades
    - Haz clic en "Aplicar Filtros" para ver los cambios
    - Haz clic en "Limpiar Filtros" para volver a ver todos los resultados
-8. **Usa las herramientas de ordenamiento** para organizar resultados por precio, duración o escalas
-9. **Oculta/muestra paneles** con los botones de los filtros y herramientas para maximizar el área de resultados
-10. Realiza nuevas búsquedas sin reiniciar la aplicación
+9. **Usa las herramientas de ordenamiento** para organizar resultados por precio, duración o escalas
+10. **Visualiza gráficos interactivos**:
+    - **Tendencia de Precios**: Ver cómo varían los precios entre las opciones disponibles
+    - **Comparar Aerolíneas**: Identificar qué aerolíneas ofrecen mejores precios en promedio
+    - **Distribución**: Analizar la distribución de precios con estadísticas (promedio, precio central, rango)
+11. **Oculta/muestra paneles** con los botones de los filtros y herramientas para maximizar el área de resultados
+12. Realiza nuevas búsquedas sin reiniciar la aplicación
 
 ### Consejos de Uso:
 - Escribe al menos 3 letras para comenzar la búsqueda de aeropuertos
@@ -131,6 +148,8 @@ Ejecuta el script principal:
 **Casos de uso comunes:**
 - **Viaje económico**: Activa filtro de precio (ej: máx 300 EUR) + máx 2 escalas
 - **Viaje rápido**: Activa filtro de duración (ej: máx 8 horas) + solo directo (0 escalas)
+- **Viaje de negocios**: Filtro de horario (ej: 07:00 a 10:00) + ordenar por duración
+- **Análisis de precios**: Usa los gráficos para identificar la mejor aerolínea o detectar outliers
 - **Viaje flexible**: Usa filtros combinados para encontrar el mejor equilibrio precio/tiempo
 
 ## Estructura del Proyecto
@@ -147,6 +166,9 @@ Comparador/
 ├── ui/                      # Interfaz de usuario
 │   ├── __init__.py
 │   └── gui.py              # Interfaz gráfica Tkinter
+├── utils/                   # Utilidades y herramientas
+│   ├── __init__.py
+│   └── graficos.py         # Módulo de visualización con matplotlib
 ├── requirements.txt         # Dependencias del proyecto
 ├── historico_precios.csv    # Historial detallado de búsquedas (generado automáticamente)
 └── README.md                # Documentación del proyecto
@@ -154,8 +176,9 @@ Comparador/
 
 ### Detalles de los módulos:
 - **controllers/flight_controller.py**: Controlador MVC con lógica de negocio (búsqueda, filtrado, ordenamiento, estadísticas)
-- **handlers/api_handler.py**: OAuth2, búsqueda de vuelos/aeropuertos, formateo de datos, guardado CSV
-- **ui/gui.py**: Interfaz Tkinter con paneles plegables, filtros y controles
+- **handlers/api_handler.py**: OAuth2, búsqueda de vuelos/aeropuertos, formateo de datos, guardado CSV, manejo multi-moneda
+- **ui/gui.py**: Interfaz Tkinter con paneles plegables, filtros, controles y selectores de moneda
+- **utils/graficos.py**: Módulo de visualización con 3 tipos de gráficos (tendencia, comparación de aerolíneas, distribución)
 - **historico_precios.csv**: Incluye precio min/max por persona, precio total, escalas obligatorias, número de adultos
 
 ## Cómo funciona la API de Amadeus
@@ -170,8 +193,10 @@ Comparador/
      * Código IATA de origen y destino
      * Fechas de salida (y regreso si aplica)
      * Número de adultos
+     * Moneda seleccionada (EUR, USD o GBP)
    - Los filtros y herramientas se resetean automáticamente
    - Se previenen búsquedas concurrentes
+   - Manejo robusto de errores con mensajes específicos (timeout, conexión, parámetros inválidos)
 5. **Filtrado de Resultados**:
    - Los vuelos se formatean en una estructura de datos con información detallada
    - Se habilitan los controles de filtrado y ordenamiento
@@ -191,11 +216,15 @@ Comparador/
 ## Notas Importantes
 - La API de Amadeus proporciona datos de **400+ aerolíneas**
 - Los precios mostrados son estimados y pueden variar
+- **Soporte multi-moneda**: Elige entre EUR, USD o GBP según tu preferencia
 - El token de acceso OAuth2 se cachea automáticamente durante 30 minutos
 - Los datos de cada búsqueda se guardan en `historico_precios.csv` con información completa
-- La moneda por defecto es EUR (puede configurarse)
+- **Validación de fechas**: La fecha de regreso siempre será igual o posterior a la fecha de salida
+- **Filtro por horario**: Formato HH:MM (ej: 08:00 a 20:00) para filtrar vuelos según hora de salida
+- **Gráficos interactivos**: Los gráficos se abren en ventanas flotantes independientes y se centran automáticamente
 - Puedes realizar múltiples búsquedas consecutivas sin reiniciar la aplicación
 - Los paneles de filtros y herramientas son plegables para maximizar el espacio de visualización
+- **Manejo de errores mejorado**: La aplicación proporciona mensajes claros y específicos para diferentes tipos de problemas
 
 ## Troubleshooting
 - **Error de autenticación**: Verifica que tus API Key y API Secret sean correctos y que uses el entorno de test (test.api.amadeus.com)
@@ -212,19 +241,21 @@ Comparador/
 - **"No hay vuelos que cumplan los filtros"**: Los filtros son muy restrictivos. Haz clic en "Limpiar Filtros" y ajústalos gradualmente
 - **La ventana es demasiado pequeña**: Usa los botones para ocultar los paneles de Filtros y Herramientas y maximizar el área de resultados
 - **No puedo hacer otra búsqueda**: Espera a que finalice la búsqueda actual. El sistema previene búsquedas concurrentes
+- **Formato de hora incorrecto en filtro de horario**: Usa el formato HH:MM (ej: 08:00, 14:30, 23:59)
+- **Fecha de regreso anterior a salida**: El sistema previene esto automáticamente. Si cambias la fecha de salida, la fecha de regreso se ajustará
+- **Error de timeout**: La API puede tardar en responder. El sistema espera hasta 30 segundos antes de reportar timeout
 
 ## Mejoras Futuras
-- Soporte para múltiples monedas
 - Filtro por aerolínea específica
-- Filtro por horario de salida/llegada específico
 - Filtro por tipo de cabina (Economy, Business, First)
 - Guardar configuraciones de filtros favoritas
-- Gráficos de tendencias de precios
 - Notificaciones de precio más bajo
 - Exportación a PDF
 - Comparación de rutas
 - Integración con otras APIs de viajes
 - Modo oscuro para la interfaz
+- Histórico de tendencias de precios por ruta
+- Sistema de alertas de precio
 
 ## Recursos Útiles
 - Documentación API Amadeus: https://developers.amadeus.com/self-service

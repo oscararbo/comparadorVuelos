@@ -50,66 +50,62 @@ def obtener_access_token():
 
 
 def buscar_aeropuertos_amadeus(keyword):
-    """
-    Busca aeropuertos y ciudades en Amadeus API
-    Retorna lista de aeropuertos que Amadeus soporta
-    """
     global _airport_cache
-    
+
     keyword_upper = keyword.upper()
     if keyword_upper in _airport_cache:
         return _airport_cache[keyword_upper]
-    
+
     if len(keyword) < 2:
         return []
-    
+
     token = obtener_access_token()
     if not token:
         return []
-    
+
     headers = {
         "Authorization": f"Bearer {token}"
     }
-    
+
     params = {
         "subType": "AIRPORT,CITY",
         "keyword": keyword,
         "page[limit]": 20
     }
-    
+
     try:
         response = requests.get(AIRPORT_SEARCH_URL, headers=headers, params=params)
         response.raise_for_status()
         data = response.json()
-        
+
         resultados = []
         for location in data.get("data", []):
             iata_code = location.get("iataCode")
             name = location.get("name")
             city = location.get("address", {}).get("cityName", "")
             country = location.get("address", {}).get("countryName", "")
-            
+
             if iata_code and name:
                 label = f"{iata_code} - {name}"
                 if city and city not in name:
                     label += f", {city}"
                 if country:
                     label += f" ({country})"
-                
+
                 resultados.append(label)
-        
+
         _airport_cache[keyword_upper] = resultados
         return resultados
-        
+
     except requests.RequestException as e:
         print(f"Error al buscar aeropuertos: {e}")
         return []
 
 
-def buscar_vuelos_amadeus(origen, destino, fecha_salida, fecha_regreso, adultos=1):
+def buscar_vuelos_amadeus(origen, destino, fecha_salida, fecha_regreso, adultos=1, moneda="EUR"):
     token = obtener_access_token()
     if not token:
-        return None
+        raise ConnectionError("No se pudo obtener el token de autenticación de Amadeus")
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -121,6 +117,7 @@ def buscar_vuelos_amadeus(origen, destino, fecha_salida, fecha_regreso, adultos=
         "destinationLocationCode": destino.upper(),
         "departureDate": fecha_salida,
         "adults": adultos,
+        "currencyCode": moneda.upper(),
         "max": 10
     }
 
@@ -128,18 +125,24 @@ def buscar_vuelos_amadeus(origen, destino, fecha_salida, fecha_regreso, adultos=
         params["returnDate"] = fecha_regreso
 
     try:
-        response = requests.get(FLIGHT_SEARCH_URL, headers=headers, params=params)
+        response = requests.get(FLIGHT_SEARCH_URL, headers=headers, params=params, timeout=30)
         response.raise_for_status()
         return response.json()
+    except requests.Timeout:
+        raise TimeoutError("La búsqueda tardó demasiado. Verifica tu conexión a internet.")
+    except requests.HTTPError as e:
+        if e.response.status_code == 400:
+            raise ValueError(f"Parámetros inválidos: {e.response.text}")
+        elif e.response.status_code == 401:
+            raise PermissionError("Credenciales de API inválidas o expiradas")
+        elif e.response.status_code == 500:
+            raise ConnectionError("Error del servidor de Amadeus. Intenta más tarde.")
+        raise
     except requests.RequestException as e:
-        print(f"Error en la búsqueda de vuelos: {e}")
-        return None
+        raise ConnectionError(f"Error de conexión: {str(e)}")
 
 
 def formatear_vuelos_amadeus(data_api):
-    """
-    Retorna una lista de diccionarios con la información estructurada de cada vuelo
-    """
     vuelos_formateados = []
 
     if not data_api or "data" not in data_api:
@@ -158,15 +161,15 @@ def formatear_vuelos_amadeus(data_api):
                 duracion_str = itin.get("duration", "PT0H0M")
                 minutos = parsear_duracion_iso(duracion_str)
                 duracion_total_minutos += minutos
-                
+
                 segments = itin.get("segments", [])
                 num_escalas += len(segments) - 1
-                
+
                 segmentos_itin = []
                 for segment in segments:
                     hora_salida = segment.get("departure", {}).get("at", "N/A")
                     hora_llegada = segment.get("arrival", {}).get("at", "N/A")
-                    
+
                     segmentos_itin.append({
                         "origen": segment.get('departure', {}).get('iataCode', '???'),
                         "destino": segment.get('arrival', {}).get('iataCode', '???'),
@@ -176,7 +179,7 @@ def formatear_vuelos_amadeus(data_api):
                         "hora_llegada": hora_llegada[:16] if hora_llegada != "N/A" else "N/A",
                         "duracion": segment.get("duration", "N/A")
                     })
-                
+
                 itineraries.append({
                     "segmentos": segmentos_itin,
                     "duracion": duracion_str,
@@ -202,99 +205,86 @@ def formatear_vuelos_amadeus(data_api):
 
 
 def parsear_duracion_iso(duracion_str):
-    """
-    Convierte duración ISO 8601 (ej: 'PT10H30M') a minutos totales
-    """
     import re
     if not duracion_str or duracion_str == "N/A":
         return 0
-    
+
     horas = 0
     minutos = 0
-    
+
     match_h = re.search(r'(\d+)H', duracion_str)
     if match_h:
         horas = int(match_h.group(1))
-    
+
     match_m = re.search(r'(\d+)M', duracion_str)
     if match_m:
         minutos = int(match_m.group(1))
-    
+
     return horas * 60 + minutos
 
 
 def formatear_vuelo_para_display(vuelo):
-    """
-    Convierte un vuelo estructurado a string para mostrar en la GUI
-    """
     try:
         precio = vuelo["precio"]
         moneda = vuelo["moneda"]
         escalas = vuelo["num_escalas"]
-        
+
         vuelo_str = f"Precio: {precio} {moneda}\n"
         vuelo_str += f"Escalas: {escalas}\n"
-        
+
         for idx, itin in enumerate(vuelo["itineraries"], 1):
             horas = itin["duracion_minutos"] // 60
             mins = itin["duracion_minutos"] % 60
             vuelo_str += f"Tramo {idx} - Duración: {horas}h {mins}m\n"
-            
+
             for seg in itin["segmentos"]:
                 vuelo_str += f"  {seg['origen']} → {seg['destino']} | "
                 vuelo_str += f"{seg['aerolinea']}{seg['numero_vuelo']} | "
                 vuelo_str += f"Sal: {seg['hora_salida']} → Lleg: {seg['hora_llegada']}\n"
-        
+
         return vuelo_str
     except Exception as e:
         return f"Error al mostrar vuelo: {e}\n"
 
 
-def filtrar_vuelos(vuelos, precio_max=None, duracion_max=None, escalas_max=None, hora_salida_min=None, hora_salida_max=None):
-    """
-    Filtra una lista de vuelos según los criterios especificados
-    
-    Args:
-        vuelos: Lista de vuelos estructurados
-        precio_max: Precio máximo en la moneda del vuelo
-        duracion_max: Duración máxima total en minutos
-        escalas_max: Número máximo de escalas
-        hora_salida_min: Hora mínima de salida (formato HH:MM)
-        hora_salida_max: Hora máxima de salida (formato HH:MM)
-    
-    Returns:
-        Lista de vuelos filtrados
-    """
+def filtrar_vuelos(vuelos, precio_max=None, duracion_max=None, escalas_max=None, hora_salida_min=None,
+                   hora_salida_max=None):
     vuelos_filtrados = []
-    
+
     for vuelo in vuelos:
-        if precio_max is not None and vuelo["precio"] > precio_max:
-            continue
-        
-        if duracion_max is not None and vuelo["duracion_total_minutos"] > duracion_max:
-            continue
-        
-        if escalas_max is not None and vuelo["num_escalas"] > escalas_max:
-            continue
-        
-        if hora_salida_min or hora_salida_max:
-            try:
-                primer_segmento = vuelo["itineraries"][0]["segmentos"][0]
-                hora_salida_str = primer_segmento["hora_salida"]
-                
+        try:
+            # Filtro de precio
+            if precio_max is not None and vuelo.get("precio", float('inf')) > precio_max:
+                continue
+
+            # Filtro de duración
+            if duracion_max is not None and vuelo.get("duracion_total_minutos", float('inf')) > duracion_max:
+                continue
+
+            # Filtro de escalas
+            if escalas_max is not None and vuelo.get("num_escalas", float('inf')) > escalas_max:
+                continue
+
+            # Filtro de horario de salida
+            if hora_salida_min or hora_salida_max:
+                primer_segmento = vuelo.get("itineraries", [{}])[0].get("segmentos", [{}])[0]
+                hora_salida_str = primer_segmento.get("hora_salida", "N/A")
+
                 if hora_salida_str != "N/A" and len(hora_salida_str) >= 11:
                     hora_salida = hora_salida_str.split('T')[1] if 'T' in hora_salida_str else hora_salida_str[11:]
                     hora_salida = hora_salida[:5]
-                    
+
                     if hora_salida_min and hora_salida < hora_salida_min:
                         continue
                     if hora_salida_max and hora_salida > hora_salida_max:
                         continue
-            except (IndexError, KeyError):
-                pass
-        
-        vuelos_filtrados.append(vuelo)
-    
+
+            vuelos_filtrados.append(vuelo)
+        except Exception as e:
+            # Si hay error procesando un vuelo, simplemente lo omitimos
+            print(f"Advertencia: Error al filtrar vuelo - {str(e)}")
+            continue
+
     return vuelos_filtrados
 
 
@@ -313,23 +303,24 @@ def guardar_resultado_amadeus(origen, destino, fecha_salida, fecha_regreso, data
             if data_api and "data" in data_api:
                 ofertas = data_api.get("data", [])
                 if ofertas:
-                    precios = [float(oferta.get("price", {}).get("total", 0)) for oferta in ofertas if oferta.get("price", {}).get("total")]
-                    
+                    precios = [float(oferta.get("price", {}).get("total", 0)) for oferta in ofertas if
+                               oferta.get("price", {}).get("total")]
+
                     if precios:
                         precio_min = min(precios)
                         precio_max = max(precios)
                         precio_total_min = precio_min * adultos
                         precio_total_max = precio_max * adultos
-                        
-                        escalas = [len(oferta.get("itineraries", [{}])[0].get("segments", [])) - 1 
-                                 for oferta in ofertas if oferta.get("itineraries")]
+
+                        escalas = [len(oferta.get("itineraries", [{}])[0].get("segments", [])) - 1
+                                   for oferta in ofertas if oferta.get("itineraries")]
                         escala_obligatoria = "Sí" if escalas and all(e > 0 for e in escalas) else "No"
-                        
+
                         moneda = ofertas[0].get("price", {}).get("currency", "EUR")
 
                         writer.writerow([
                             origen, destino, fecha_salida, fecha_regreso, adultos,
-                            f"{precio_min:.2f}", f"{precio_max:.2f}", 
+                            f"{precio_min:.2f}", f"{precio_max:.2f}",
                             f"{precio_total_min:.2f}", f"{precio_total_max:.2f}",
                             escala_obligatoria, moneda,
                             datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -338,25 +329,46 @@ def guardar_resultado_amadeus(origen, destino, fecha_salida, fecha_regreso, data
         print(f"Error al guardar resultado: {e}")
 
 
-def buscar_vuelos(origen, destino, fecha_salida, fecha_regreso, adultos=1):
+def buscar_vuelos(origen, destino, fecha_salida, fecha_regreso, adultos=1, moneda="EUR"):
     if not API_KEY or not API_SECRET:
-        return {"error": True, "mensaje": ["Error: Credenciales de Amadeus no configuradas"], "vuelos": []}
+        return {"error": True,
+                "mensaje": ["Error: Credenciales de Amadeus no configuradas. Verifica API_KEY y API_SECRET."],
+                "vuelos": [], "moneda": moneda}
 
-    resultado = buscar_vuelos_amadeus(origen, destino, fecha_salida, fecha_regreso, adultos)
-
-    if not resultado:
-        return {"error": True, "mensaje": ["Error: No se pudo conectar con la API de Amadeus"], "vuelos": []}
+    try:
+        resultado = buscar_vuelos_amadeus(origen, destino, fecha_salida, fecha_regreso, adultos, moneda)
+    except ConnectionError as e:
+        return {"error": True, "mensaje": [f"Error de conexión: {str(e)}"], "vuelos": [], "moneda": moneda}
+    except TimeoutError as e:
+        return {"error": True, "mensaje": [str(e)], "vuelos": [], "moneda": moneda}
+    except ValueError as e:
+        return {"error": True, "mensaje": [f"Datos inválidos: {str(e)}"], "vuelos": [], "moneda": moneda}
+    except PermissionError as e:
+        return {"error": True, "mensaje": [str(e)], "vuelos": [], "moneda": moneda}
+    except Exception as e:
+        return {"error": True, "mensaje": [f"Error inesperado: {str(e)}"], "vuelos": [], "moneda": moneda}
 
     if "errors" in resultado:
         errores = resultado.get("errors", [])
-        mensajes_error = [f"{err.get('detail', 'Error desconocido')}" for err in errores]
-        return {"error": True, "mensaje": mensajes_error if mensajes_error else ["Error en la búsqueda"], "vuelos": []}
+        mensajes_error = []
+        for err in errores:
+            detail = err.get('detail', 'Error desconocido')
+            code = err.get('code', '')
+            mensajes_error.append(f"{code}: {detail}" if code else detail)
+        return {"error": True, "mensaje": mensajes_error, "vuelos": [], "moneda": moneda}
 
-    guardar_resultado_amadeus(origen, destino, fecha_salida, fecha_regreso, resultado, adultos)
+    try:
+        guardar_resultado_amadeus(origen, destino, fecha_salida, fecha_regreso, resultado, adultos)
+    except Exception as e:
+        print(f"Advertencia: No se pudo guardar en CSV - {str(e)}")
 
-    vuelos = formatear_vuelos_amadeus(resultado)
+    try:
+        vuelos = formatear_vuelos_amadeus(resultado)
+    except Exception as e:
+        return {"error": True, "mensaje": [f"Error al procesar resultados: {str(e)}"], "vuelos": [], "moneda": moneda}
 
     if not vuelos:
-        return {"error": False, "mensaje": ["No se encontraron vuelos para los criterios ingresados."], "vuelos": []}
+        return {"error": False, "mensaje": ["No se encontraron vuelos para los criterios ingresados."], "vuelos": [],
+                "moneda": moneda}
 
-    return {"error": False, "mensaje": [], "vuelos": vuelos}
+    return {"error": False, "mensaje": [], "vuelos": vuelos, "moneda": moneda}
