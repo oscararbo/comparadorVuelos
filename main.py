@@ -1,4 +1,4 @@
-from gui import iniciar_interfaz
+from ui.gui import iniciar_interfaz
 
 def main():
     iniciar_interfaz()
